@@ -29,6 +29,14 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.get('/api/debug/env', (_req, res) => {
+  res.json({
+    hasOpenAI: !!process.env.OPENAI_API_KEY,
+    supabaseUrl: process.env.SUPABASE_URL || null,
+    hasSupabaseRole: !!process.env.SUPABASE_SERVICE_ROLE,
+  });
+});
+
 
 // --------- static & root ----------
 app.use(express.static(__dirname));
@@ -276,3 +284,4 @@ const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
+
