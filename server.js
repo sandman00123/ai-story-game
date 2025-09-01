@@ -13,6 +13,21 @@
  *
  * Then open: http://localhost:8787/index.html
  */
+ const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+async function sb(path, init = {}) {
+  const url = `${SUPABASE_URL}/rest/v1${path}`;
+  const headers = {
+    "apikey": SUPABASE_SERVICE_ROLE,
+    "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE}`,
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+  };
+  const res = await fetch(url, { ...init, headers: { ...headers, ...(init.headers||{}) } });
+  if (!res.ok) throw new Error(`[Supabase ${res.status}] ${await res.text()}`);
+  return res.json();
+}
 
  const express = require('express');
  const cors = require('cors');
@@ -145,4 +160,5 @@
  app.listen(PORT, () => {
    console.log(`AI Story server running on http://localhost:${PORT}`);
  });
+
  
