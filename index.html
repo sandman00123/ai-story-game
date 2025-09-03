@@ -153,6 +153,44 @@
     </div>
 
     <script>
+      // === Share to Storyboard ===
+const shareBtn = document.getElementById('share');
+const handleEl = document.getElementById('handle');
+
+// Save/load nickname
+handleEl.value = localStorage.getItem('story_handle') || '';
+handleEl.onchange = () => localStorage.setItem('story_handle', handleEl.value.trim());
+
+function currentStoryText() {
+  return document.getElementById('story').textContent.trim();
+}
+
+shareBtn.onclick = async () => {
+  const content = currentStoryText();
+  if (!content || content === 'Your story begins here…') {
+    alert('Write a bit of story first!');
+    return;
+  }
+  const title = prompt('Story title?', 'Untitled adventure') || 'Untitled adventure';
+  const mood = document.getElementById('mood').value;
+  const drama = document.getElementById('drama').value || 3;
+  const author = handleEl.value.trim() || 'Anon';
+
+  try {
+    const r = await fetch('/api/storyboard/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, mood, drama, content, author })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Failed to share');
+    alert('Shared! Opening storyboard…');
+    window.location.href = '/board.html';
+  } catch (e) {
+    alert('Share failed: ' + e.message);
+  }
+};
+
       const storyEl = document.getElementById('story');
       const inputEl = document.getElementById('input');
       const sendBtn = document.getElementById('send');
@@ -310,5 +348,6 @@
     </script>
   </body>
 </html>
+
 
 
