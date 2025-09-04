@@ -13,9 +13,16 @@
 
     h1 { margin:10px 0; text-shadow: 0 0 10px #00ff66; }
     .nick { margin-left:auto; display:flex; gap:8px; align-items:center; }
-    .nick input { background:#000; color:#00ff66; border:1px solid #00ff66; border-radius:8px; padding:6px; width:160px; }
+    .nick input, .filters input, .filters select {
+      background:#000; color:#00ff66; border:1px solid #00ff66; border-radius:8px; padding:6px;
+    }
+    .filters { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin:10px 0 4px; }
+    .filters .row { display:flex; flex-direction:column; gap:6px; }
+    .filters .actions { display:flex; gap:10px; align-items:center; }
+    .filters button { background:#000; color:#00ff66; border:1px solid #00ff66; padding:6px 10px; border-radius:8px; cursor:pointer; }
+    .filters button:hover { background:#00ff66; color:#000; }
 
-    .status { font-size:12px; opacity:.9; }
+    .status { font-size:12px; opacity:.9; margin: 4px 0 10px; }
 
     .story { border:1px solid #00ff66; border-radius:8px; background:#0a0a0a; padding:12px; margin:12px 0; }
     .title { font-weight:bold; margin-bottom:4px; }
@@ -24,7 +31,7 @@
     .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .actions button { background:#000; color:#00ff66; border:1px solid #00ff66; padding:6px 10px; border-radius:6px; cursor:pointer; }
     .actions button:hover { background:#00ff66; color:#000; }
-    .actions button[disabled] { opacity:.5; cursor:not-allowed; }
+    .actions button[disabled] { opacity:.5; cursor:progress; }
 
     .comments { margin-top:10px; padding-left:10px; border-left:1px dashed #00ff66; }
     .comment { margin:6px 0; font-size:13px; }
@@ -51,6 +58,51 @@
       <input id="handle" placeholder="Anon">
     </div>
   </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <div class="row">
+      <label for="fTitle">Story name</label>
+      <input id="fTitle" placeholder="e.g., lake, night...">
+    </div>
+    <div class="row">
+      <label for="fAuthor">Author</label>
+      <input id="fAuthor" placeholder="nickname">
+    </div>
+    <div class="row">
+      <label for="fMood">Mood</label>
+      <select id="fMood">
+        <option value="any">Any</option>
+        <option value="horror">Horror</option>
+        <option value="romance">Romance</option>
+        <option value="sci-fi">Sci-Fi</option>
+        <option value="fantasy">Fantasy</option>
+        <option value="mystery">Mystery</option>
+        <option value="comedy">Comedy</option>
+        <option value="noir">Detective Noir</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="fDrama">Drama</label>
+      <select id="fDrama">
+        <option value="any">Any</option>
+        <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Sort</label>
+      <div>Most recent</div>
+      <!-- (Server already sorts by created_at desc) -->
+    </div>
+    <div class="row">
+      <label>&nbsp;</label>
+      <div class="actions">
+        <button id="apply">Apply</button>
+        <button id="clear">Clear</button>
+      </div>
+    </div>
+  </div>
+
   <div class="status" id="status">Loading…</div>
 
   <div id="stories"></div>
@@ -60,7 +112,14 @@
     const statusEl  = document.getElementById('status');
     const handleEl  = document.getElementById('handle');
 
-    // Load/save nickname (same key as game)
+    const fTitle  = document.getElementById('fTitle');
+    const fAuthor = document.getElementById('fAuthor');
+    const fMood   = document.getElementById('fMood');
+    const fDrama  = document.getElementById('fDrama');
+    const btnApply = document.getElementById('apply');
+    const btnClear = document.getElementById('clear');
+
+    // Nickname same as game
     handleEl.value = localStorage.getItem('story_handle') || '';
     handleEl.onchange = () => localStorage.setItem('story_handle', handleEl.value.trim());
 
@@ -71,25 +130,30 @@
       localStorage.setItem('client_id', clientId);
     }
 
-    // Utilities
     function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     }
     function setStatus(msg) { statusEl.textContent = msg; }
 
-    // Load stories
+    function buildQuery() {
+      const p = new URLSearchParams();
+      if (fTitle.value.trim())  p.set('title',  fTitle.value.trim());
+      if (fAuthor.value.trim()) p.set('author', fAuthor.value.trim());
+      if (fMood.value !== 'any')   p.set('mood',  fMood.value);
+      if (fDrama.value !== 'any')  p.set('drama', fDrama.value);
+      p.set('limit', '50');
+      return '/api/storyboard/list?' + p.toString();
+    }
+
     async function loadStories() {
       try {
         setStatus('Loading stories…');
-        const r = await fetch('/api/storyboard/list', { cache: 'no-store' });
+        const r = await fetch(buildQuery(), { cache: 'no-store' });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
         const list = Array.isArray(j.stories) ? j.stories : [];
         renderStories(list);
-        setStatus(list.length ? 'Loaded.' : 'No stories yet — share from the game page.');
+        setStatus(list.length ? 'Loaded.' : 'No stories found. Try different filters.');
       } catch (e) {
         console.error('List error:', e);
         setStatus('Error: ' + e.message);
@@ -98,10 +162,7 @@
     }
 
     function renderStories(list) {
-      if (!list.length) {
-        storiesEl.innerHTML = '<div>No stories yet. Share from the game page!</div>';
-        return;
-      }
+      if (!list.length) { storiesEl.innerHTML = '<div>No stories match.</div>'; return; }
       storiesEl.innerHTML = '';
       list.forEach(s => {
         const div = document.createElement('div');
@@ -132,16 +193,22 @@
       storiesEl.querySelectorAll('button[data-like]').forEach(btn => {
         btn.onclick = async () => {
           const id = btn.getAttribute('data-like');
-          // Optimistically disable to signal one-like
+          const counter = document.getElementById('counts-' + id);
+          const m = counter.textContent.match(/👍\s*(\d+)/);
+          if (m) counter.textContent = `👍 ${parseInt(m[1],10)+1}`;
           btn.disabled = true;
           try {
             await fetch('/api/storyboard/react', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ story_id: id, client_id: clientId })
-            });
-          } catch (e) { console.warn('Like failed:', e); }
-          setTimeout(loadStories, 600);
+            }).then(r => r.json().catch(()=>({})));
+            setTimeout(loadStories, 600);
+          } catch (e) {
+            if (m) counter.textContent = `👍 ${parseInt(m[1],10)}`;
+            btn.disabled = false;
+            alert('Like failed: ' + e.message);
+          }
         };
       });
       storiesEl.querySelectorAll('button[data-toggle-comments]').forEach(btn => {
@@ -151,12 +218,8 @@
 
     async function toggleComments(storyId) {
       const box = document.getElementById('comments-' + storyId);
-      if (box.style.display === 'none') {
-        await loadComments(storyId);
-        box.style.display = 'block';
-      } else {
-        box.style.display = 'none';
-      }
+      if (box.style.display === 'none') { await loadComments(storyId); box.style.display = 'block'; }
+      else { box.style.display = 'none'; }
     }
 
     async function loadComments(storyId) {
@@ -166,11 +229,9 @@
         const r = await fetch('/api/storyboard/comments?story_id=' + encodeURIComponent(storyId), { cache: 'no-store' });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-
         const items = (j.comments || []).map(c =>
           `<div class="comment"><b>${escapeHtml(c.handle || 'Anon')}:</b> ${escapeHtml(c.body || '')}</div>`
         ).join('');
-
         box.innerHTML = `
           ${items || '<div class="comment">No comments yet.</div>'}
           <div style="margin-top:8px;">
@@ -180,7 +241,6 @@
             </div>
           </div>
         `;
-
         document.getElementById('post-' + storyId).onclick = async () => {
           const txt = document.getElementById('comment-input-' + storyId).value.trim();
           if (!txt) return;
@@ -192,9 +252,7 @@
               body: JSON.stringify({ story_id: storyId, body: txt, handle })
             });
             await loadComments(storyId);
-          } catch (e) {
-            alert('Comment failed: ' + e.message);
-          }
+          } catch (e) { alert('Comment failed: ' + e.message); }
         };
       } catch (e) {
         console.error('Comments error:', e);
@@ -202,9 +260,20 @@
       }
     }
 
-    // Initial load + periodic refresh
+    // Filter actions
+    btnApply.onclick = loadStories;
+    btnClear.onclick = () => {
+      fTitle.value = '';
+      fAuthor.value = '';
+      fMood.value = 'any';
+      fDrama.value = 'any';
+      loadStories();
+    };
+    // Enter key triggers apply in text inputs
+    [fTitle, fAuthor].forEach(inp => inp.addEventListener('keydown', e => { if (e.key === 'Enter') btnApply.click(); }));
+
+    // Initial load
     loadStories();
-    setInterval(loadStories, 15000);
   </script>
 </body>
 </html>
