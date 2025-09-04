@@ -278,30 +278,42 @@ app.get('/api/storyboard/list', async (_req, res) => {
   }
 });
 
-// Like / Dislike (MVP increment)
+// One-reaction-per-user enforcement with upsert + recount
 app.post('/api/storyboard/react', async (req, res) => {
   try {
-    const { story_id, value } = req.body; // value: 1 or -1
+    const { story_id, value, client_id } = req.body; // value: 1, -1, or 0 (clear)
     const v = Number(value);
-    if (!story_id || ![1, -1].includes(v)) {
-      return res.status(400).json({ error: "Invalid reaction" });
+
+    if (!story_id || !client_id || ![-1, 0, 1].includes(v)) {
+      return res.status(400).json({ error: "Invalid payload (need story_id, client_id, value ∈ {-1,0,1})" });
     }
 
-    const current = await sb(`/stories?id=eq.${story_id}&select=likes,dislikes`);
-    if (!current.length) return res.status(404).json({ error: "Story not found" });
-    const { likes, dislikes } = current[0];
-
-    const patch = v === 1 ? { likes: (likes || 0) + 1 } : { dislikes: (dislikes || 0) + 1 };
-    const [updated] = await sb('/stories?id=eq.' + story_id, {
-      method: 'PATCH',
-      body: JSON.stringify(patch)
+    // Upsert reaction
+    await sb('/story_reactions', {
+      method: 'POST',
+      body: JSON.stringify([{ story_id, client_id, value: v }])
     });
 
-    res.json({ ok: true, story: updated });
+    // Recompute totals
+    const likesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.1&select=count`);
+    const dislikesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.-1&select=count`);
+
+    // PostgREST returns [{count: "N"}] when using select=count
+    const likes = Number(likesRows?.[0]?.count || 0);
+    const dislikes = Number(dislikesRows?.[0]?.count || 0);
+
+    // Persist back to stories for fast listing
+    const [updated] = await sb('/stories?id=eq.' + story_id, {
+      method: 'PATCH',
+      body: JSON.stringify({ likes, dislikes })
+    });
+
+    res.json({ ok: true, story: updated, likes, dislikes });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // Post a comment
 app.post('/api/storyboard/comment', async (req, res) => {
@@ -338,3 +350,4 @@ const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
+
