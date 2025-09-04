@@ -1,23 +1,21 @@
-// ----------------------------
+// ============================
 // server.js  (Game + Storyboard API)
-// ----------------------------
+// ============================
 /**
- * Install deps locally (dev):
+ * Local dev quick start:
  *   npm install express cors dotenv node-fetch@2
- *
- * Start locally (Windows CMD):
- *   set OPENAI_API_KEY=sk-...your key...
+ *   set OPENAI_API_KEY=sk-... (Windows CMD) | export OPENAI_API_KEY=sk-... (bash)
  *   set PORT=8787
  *   node server.js
  *
- * Deploy on Render:
+ * Deploy (Render):
  *   Build: npm install
  *   Start: node server.js
- *   Env vars (Render → Environment):
- *     OPENAI_API_KEY=sk-...            (required)
- *     PORT=10000                       (Render uses dynamic ports)
- *     SUPABASE_URL=...                 (required for storyboard)
- *     SUPABASE_SERVICE_ROLE=...        (required for storyboard; server-only)
+ *   Env vars:
+ *     OPENAI_API_KEY=sk-...
+ *     SUPABASE_URL=https://xxxxx.supabase.co
+ *     SUPABASE_SERVICE_ROLE=xxxxx
+ *     (Render provides PORT automatically)
  */
 
 const express = require('express');
@@ -29,29 +27,35 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.get('/api/debug/env', (_req, res) => {
-  res.json({
-    hasOpenAI: !!process.env.OPENAI_API_KEY,
-    supabaseUrl: process.env.SUPABASE_URL || null,
-    hasSupabaseRole: !!process.env.SUPABASE_SERVICE_ROLE,
-  });
-});
 
-
-// --------- static & root ----------
+// ---------- Static ----------
 app.use(express.static(__dirname));
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
 
-// --------- health ----------
-app.get('/api/health', (req, res) => {
+// ---------- Health ----------
+app.get('/api/health', (_req, res) => {
   const hasKey = !!process.env.OPENAI_API_KEY;
   res.json({ ok: true, hasKey });
 });
 
-// ========= GAME: narrator endpoint with mood + dramatic scale =========
+// ========== Profanity Sanitizer ==========
+const BAD_WORDS = [
+  'fuck','shit','bitch','bastard','asshole','dick','pussy','cunt','slut','whore',
+  'faggot','retard','motherfucker','fucker','fucking'
+];
+const VOWEL_RE = /[aeiou]/gi;
+function maskWord(w) { return w.replace(VOWEL_RE, '*'); }
+function sanitizeText(text) {
+  if (!text) return text;
+  let out = text;
+  for (const bw of BAD_WORDS) {
+    // word boundary to avoid partial replacements inside harmless words
+    const re = new RegExp(`\\b${bw}\\b`, 'gi');
+    out = out.replace(re, (m) => maskWord(m));
+  }
+  return out;
+}
 
+// ========== Game: narrator endpoint ==========
 function mapDramaToTemp(drama) {
   switch (String(drama)) {
     case "1": return 0.4;
@@ -62,46 +66,22 @@ function mapDramaToTemp(drama) {
     default: return 0.7;
   }
 }
-
 function dramaInstructions(drama) {
   switch (String(drama)) {
     case "1":
-      return "Narration style: Write very plain and simple. Short sentences. Minimal detail. Like an amateur storyteller.";
+      return "Narration style: Very plain and simple. Short sentences. Minimal description.";
     case "2":
-      return "Narration style: Simple narration with some description. A beginner storyteller with a bit of flair.";
+      return "Narration style: Simple narration with occasional description.";
     case "3":
-      return "Narration style: Balanced detail. Moderate description, engaging but not too theatrical.";
+      return "Narration style: Balanced detail. Moderate description, engaging but not theatrical.";
     case "4":
-      return "Narration style: Dramatic with vivid imagery and emotional tone. Add suspense and flair.";
+      return "Narration style: Dramatic with vivid imagery and suspense.";
     case "5":
-      return "Narration style: Extremely dramatic and theatrical. Rich detail, powerful emotions, like a professional novelist.";
+      return "Narration style: Highly dramatic and theatrical. Rich detail and powerful emotions.";
     default:
-      return "Narration style: Balanced detail, engaging but not too theatrical.";
+      return "Narration style: Balanced detail, engaging but not theatrical.";
   }
 }
-app.post('/api/storyboard/share', async (req, res) => {
-  try {
-    const { title, mood, drama, content, author } = req.body;
-    if (!title || !content) return res.status(400).json({ error: "Missing title or content" });
-
-    const sanitized = {
-      title: sanitizeText(title),
-      mood: sanitizeText(mood || ''),
-      drama: Number(drama) || 3,
-      content: sanitizeText(content),
-      author: sanitizeText(author || 'Anon')
-    };
-
-    const [story] = await sb('/stories', {
-      method: 'POST',
-      body: JSON.stringify([sanitized])
-    });
-
-    res.json({ ok: true, story });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 app.post('/api/continue', async (req, res) => {
   try {
@@ -159,12 +139,15 @@ STYLE:
         text = data.output[0].content[0].text;
       }
     } catch {
-      // ignore, fallback below
+      // keep fallback
     }
 
     if (!text || text.trim() === '') {
       text = "The narrator hesitates, then continues cautiously. (Fallback)";
     }
+
+    // sanitize narrator output to keep site PG-13
+    text = sanitizeText(text);
 
     return res.json({ text });
   } catch (err) {
@@ -172,12 +155,10 @@ STYLE:
   }
 });
 
-// ========= STORYBOARD: Supabase wiring =========
-
+// ========== Storyboard (Supabase) ==========
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-// Simple PostgREST helper
 async function sb(path, init = {}) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
     throw new Error("Supabase is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE missing).");
@@ -195,7 +176,7 @@ async function sb(path, init = {}) {
 }
 
 /**
- * Expected DB schema (run in Supabase SQL editor first):
+ * Ensure your DB has:
  *
  * create table if not exists stories (
  *   id uuid primary key default gen_random_uuid(),
@@ -203,6 +184,7 @@ async function sb(path, init = {}) {
  *   mood text,
  *   drama int check (drama between 1 and 5),
  *   content text not null,
+ *   author text default 'Anon',
  *   likes int not null default 0,
  *   dislikes int not null default 0,
  *   created_at timestamp with time zone default now()
@@ -222,12 +204,20 @@ async function sb(path, init = {}) {
 // Share a story
 app.post('/api/storyboard/share', async (req, res) => {
   try {
-    const { title, mood, drama, content } = req.body;
+    const { title, mood, drama, content, author } = req.body;
     if (!title || !content) return res.status(400).json({ error: "Missing title or content" });
+
+    const sanitized = {
+      title: sanitizeText(title),
+      mood: sanitizeText(mood || ''),
+      drama: Number(drama) || 3,
+      content: sanitizeText(content),
+      author: sanitizeText(author || 'Anon')
+    };
 
     const [story] = await sb('/stories', {
       method: 'POST',
-      body: JSON.stringify([{ title, mood, drama: Number(drama) || 3, content }])
+      body: JSON.stringify([sanitized])
     });
 
     res.json({ ok: true, story });
@@ -239,14 +229,14 @@ app.post('/api/storyboard/share', async (req, res) => {
 // List recent stories
 app.get('/api/storyboard/list', async (_req, res) => {
   try {
-    const rows = await sb('/stories?select=*&order=created_at.desc&limit=20');
+    const rows = await sb('/stories?select=*&order=created_at.desc&limit=30');
     res.json({ stories: rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Like / Dislike (simple increment — MVP; not race-proof)
+// Like / Dislike (MVP increment)
 app.post('/api/storyboard/react', async (req, res) => {
   try {
     const { story_id, value } = req.body; // value: 1 or -1
@@ -255,7 +245,6 @@ app.post('/api/storyboard/react', async (req, res) => {
       return res.status(400).json({ error: "Invalid reaction" });
     }
 
-    // Read current counts (MVP approach)
     const current = await sb(`/stories?id=eq.${story_id}&select=likes,dislikes`);
     if (!current.length) return res.status(404).json({ error: "Story not found" });
     const { likes, dislikes } = current[0];
@@ -280,7 +269,7 @@ app.post('/api/storyboard/comment', async (req, res) => {
 
     const [row] = await sb('/story_comments', {
       method: 'POST',
-      body: JSON.stringify([{ story_id, handle: handle || 'Anon', body }])
+      body: JSON.stringify([{ story_id, handle: sanitizeText(handle || 'Anon'), body: sanitizeText(body) }])
     });
 
     res.json({ ok: true, comment: row });
@@ -302,9 +291,8 @@ app.get('/api/storyboard/comments', async (req, res) => {
   }
 });
 
-// --------- start ----------
+// ---------- Start ----------
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
-
