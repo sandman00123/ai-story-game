@@ -1,7 +1,3 @@
-<a href="/index.html" style="color:#00ff66; text-decoration:none; border:1px solid #00ff66; padding:6px 10px; border-radius:6px;">
-  🎮 Back to Game
-</a>
-
 <!doctype html>
 <html>
 <head>
@@ -9,31 +5,34 @@
   <title>Storyboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    /* Matrix theme */
     body { font-family: "Courier New", monospace; background: #000; color: #00ff66; margin: 20px; }
-    h1 { text-align: center; text-shadow: 0 0 10px #00ff66; margin-bottom: 14px; }
-    .bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-    a { color:#00ff66; text-decoration:none; border-bottom:1px dashed #00ff66; }
-    a:hover { color:#000; background:#00ff66; }
-    #stories { margin-top: 10px; }
+    .top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    a.link { color:#00ff66; text-decoration:none; border:1px solid #00ff66; padding:6px 10px; border-radius:8px; }
+    a.link:hover { background:#00ff66; color:#000; }
+
+    h1 { margin:10px 0; text-shadow: 0 0 10px #00ff66; }
+    .nick { margin-left:auto; display:flex; gap:8px; align-items:center; }
+    .nick input { background:#000; color:#00ff66; border:1px solid #00ff66; border-radius:8px; padding:6px; width:160px; }
+
+    .status { font-size:12px; opacity:.9; }
 
     .story { border:1px solid #00ff66; border-radius:8px; background:#0a0a0a; padding:12px; margin:12px 0; }
-    .title { font-weight:bold; margin-bottom:6px; }
-    .meta { font-size:12px; opacity:.8; margin-bottom:8px; }
+    .title { font-weight:bold; margin-bottom:4px; }
+    .meta { font-size:12px; opacity:.9; margin-bottom:8px; }
     .content { white-space:pre-wrap; margin-bottom:8px; }
-    .actions { display:flex; gap:8px; align-items:center; margin-top:6px; }
-    .actions button {
-      background:#000; color:#00ff66; border:1px solid #00ff66; padding:6px 10px; border-radius:6px; cursor:pointer;
-    }
+    .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .actions button { background:#000; color:#00ff66; border:1px solid #00ff66; padding:6px 10px; border-radius:6px; cursor:pointer; }
     .actions button:hover { background:#00ff66; color:#000; }
 
     .comments { margin-top:10px; padding-left:10px; border-left:1px dashed #00ff66; }
     .comment { margin:6px 0; font-size:13px; }
+
     textarea {
       width:100%; background:#000; color:#00ff66; border:1px solid #00ff66; border-radius:6px; padding:8px; resize:vertical;
       font-family:"Courier New", monospace;
     }
 
-    /* Scanline vibe */
     body::after {
       content:""; position:fixed; inset:0; pointer-events:none;
       background: repeating-linear-gradient(to bottom, rgba(0,255,102,.08) 0px, rgba(0,255,102,.05) 2px, transparent 4px);
@@ -43,58 +42,28 @@
   </style>
 </head>
 <body>
-  <div class="bar">
+  <div class="top">
+    <a class="link" href="/index.html">🎮 Back to Game</a>
     <h1>📖 Storyboard</h1>
-    <a href="/index.html">← Back to Game</a>
+    <div class="nick">
+      <label for="handle">Nickname:</label>
+      <input id="handle" placeholder="Anon">
+    </div>
   </div>
+  <div class="status" id="status">Loading…</div>
 
-  <div id="stories">Loading…</div>
+  <div id="stories"></div>
 
   <script>
-    // ===== Anonymous profile system =====
-
-// Create or load a client_id (UUID)
-let clientId = localStorage.getItem('client_id');
-if (!clientId) {
-  clientId = crypto.randomUUID();
-  localStorage.setItem('client_id', clientId);
-}
-
-// Try to sync nickname with server if missing locally
-(async () => {
-  const localNick = localStorage.getItem('story_handle');
-  if (!localNick && clientId) {
-    try {
-      const r = await fetch('/api/profile/get?client_id=' + encodeURIComponent(clientId));
-      const j = await r.json();
-      if (j.profile?.nickname) {
-        localStorage.setItem('story_handle', j.profile.nickname);
-        document.getElementById('handle').value = j.profile.nickname;
-      }
-    } catch (e) {
-      console.warn('Profile fetch failed', e);
-    }
-  }
-})();
-
-// Save nickname locally AND on server
-function saveNickname(nick) {
-  localStorage.setItem('story_handle', nick);
-  fetch('/api/profile/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: clientId, nickname: nick })
-  }).catch(e => console.warn('Profile save failed', e));
-}
-
-// Hook to nickname input field
-const handleEl = document.getElementById('handle');
-handleEl.addEventListener('change', () => {
-  saveNickname(handleEl.value.trim());
-});
-
     const storiesEl = document.getElementById('stories');
+    const statusEl  = document.getElementById('status');
+    const handleEl  = document.getElementById('handle');
 
+    // Load/save nickname (same key as game)
+    handleEl.value = localStorage.getItem('story_handle') || '';
+    handleEl.onchange = () => localStorage.setItem('story_handle', handleEl.value.trim());
+
+    // Utilities
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, "&amp;")
@@ -102,61 +71,100 @@ handleEl.addEventListener('change', () => {
         .replace(/>/g, "&gt;");
     }
 
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    // Load the list of stories
     async function loadStories() {
       try {
-        const r = await fetch('/api/storyboard/list');
+        setStatus('Loading stories…');
+        const r = await fetch('/api/storyboard/list', { cache: 'no-store' }); // <-- important path
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Failed to load');
-
-        if (!j.stories || j.stories.length === 0) {
-          storiesEl.innerHTML = '<div>No stories yet. Be the first to share from the game screen!</div>';
-          return;
-        }
-
-        storiesEl.innerHTML = '';
-        j.stories.forEach(s => {
-          const div = document.createElement('div');
-          div.className = 'story';
-          const preview = (s.content || '').slice(0, 400);
-          div.innerHTML = `
-            <div class="title">${escapeHtml(s.title || '(Untitled)')}</div>
-            <div class="meta">Mood: ${escapeHtml(s.mood || '—')} · Drama: ${s.drama ?? '—'} · ${new Date(s.created_at).toLocaleString()}</div>
-            <div class="content">${escapeHtml(preview)}${s.content.length > 400 ? '…' : ''}</div>
-            <div class="actions">
-              <span>👍 ${s.likes || 0} · 👎 ${s.dislikes || 0}</span>
-              <button data-like="${s.id}">Like</button>
-              <button data-dislike="${s.id}">Dislike</button>
-              <button data-toggle-comments="${s.id}">Comments</button>
-            </div>
-            <div id="comments-${s.id}" class="comments" style="display:none;"></div>
-          `;
-          storiesEl.appendChild(div);
-        });
-
-        // wire buttons
-        storiesEl.querySelectorAll('button[data-like]').forEach(btn => {
-          btn.onclick = () => react(btn.getAttribute('data-like'), 1);
-        });
-        storiesEl.querySelectorAll('button[data-dislike]').forEach(btn => {
-          btn.onclick = () => react(btn.getAttribute('data-dislike'), -1);
-        });
-        storiesEl.querySelectorAll('button[data-toggle-comments]').forEach(btn => {
-          btn.onclick = () => toggleComments(btn.getAttribute('data-toggle-comments'));
-        });
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        renderStories(Array.isArray(j.stories) ? j.stories : []);
+        setStatus(j.stories && j.stories.length ? 'Loaded.' : 'No stories yet — share from the game page.');
       } catch (e) {
-        storiesEl.innerHTML = `<div>[Error: ${escapeHtml(e.message)}]</div>`;
+        console.error('List error:', e);
+        setStatus('Error: ' + e.message);
+        storiesEl.innerHTML = '';
       }
     }
 
-    async function react(id, value) {
-      try {
-        await fetch('/api/storyboard/react', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ story_id: id, value })
-        });
-        loadStories();
-      } catch {}
+    function renderStories(list) {
+      if (!list.length) {
+        storiesEl.innerHTML = '<div>No stories yet. Share from the game page!</div>';
+        return;
+      }
+      storiesEl.innerHTML = '';
+      list.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'story';
+        const preview = (s.content || '').slice(0, 1200);
+        div.innerHTML = `
+          <div class="title">${escapeHtml(s.title || '(Untitled)')}</div>
+          <div class="meta">
+            By ${escapeHtml(s.author || 'Anon')}
+            · Mood: ${escapeHtml(s.mood || '—')}
+            · Drama: ${s.drama ?? '—'}
+            · ${s.created_at ? new Date(s.created_at).toLocaleString() : ''}
+          </div>
+          <div class="content">${escapeHtml(preview)}${(s.content && s.content.length > 1200) ? '…' : ''}</div>
+          <div class="actions">
+            <span id="counts-${s.id}">👍 ${s.likes || 0} · 👎 ${s.dislikes || 0}</span>
+            <button data-like="${s.id}">Like</button>
+            <button data-dislike="${s.id}">Dislike</button>
+            <button data-toggle-comments="${s.id}">Comments</button>
+          </div>
+          <div id="comments-${s.id}" class="comments" style="display:none;"></div>
+        `;
+        storiesEl.appendChild(div);
+      });
+      wireButtons();
+    }
+
+    function wireButtons() {
+      storiesEl.querySelectorAll('button[data-like]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-like');
+          optimisticCount(id, 1);
+          try {
+            await fetch('/api/storyboard/react', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ story_id: id, value: 1 })
+            });
+          } catch (e) { console.warn('Like failed:', e); }
+          setTimeout(loadStories, 1500);
+        };
+      });
+      storiesEl.querySelectorAll('button[data-dislike]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-dislike');
+          optimisticCount(id, -1);
+          try {
+            await fetch('/api/storyboard/react', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ story_id: id, value: -1 })
+            });
+          } catch (e) { console.warn('Dislike failed:', e); }
+          setTimeout(loadStories, 1500);
+        };
+      });
+      storiesEl.querySelectorAll('button[data-toggle-comments]').forEach(btn => {
+        btn.onclick = () => toggleComments(btn.getAttribute('data-toggle-comments'));
+      });
+    }
+
+    function optimisticCount(id, delta) {
+      const span = document.getElementById('counts-' + id);
+      if (!span) return;
+      const m = span.textContent.match(/👍\s*(\d+)\s*·\s*👎\s*(\d+)/);
+      if (!m) return;
+      let up = parseInt(m[1], 10), down = parseInt(m[2], 10);
+      if (delta === 1) up++; else down++;
+      span.textContent = `👍 ${up} · 👎 ${down}`;
     }
 
     async function toggleComments(storyId) {
@@ -173,12 +181,12 @@ handleEl.addEventListener('change', () => {
       const box = document.getElementById('comments-' + storyId);
       box.innerHTML = 'Loading comments…';
       try {
-        const r = await fetch('/api/storyboard/comments?story_id=' + storyId);
+        const r = await fetch('/api/storyboard/comments?story_id=' + encodeURIComponent(storyId), { cache: 'no-store' });
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'Failed to load comments');
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
 
         const items = (j.comments || []).map(c =>
-          `<div class="comment"><b>${escapeHtml(c.handle || 'Anon')}:</b> ${escapeHtml(c.body)}</div>`
+          `<div class="comment"><b>${escapeHtml(c.handle || 'Anon')}:</b> ${escapeHtml(c.body || '')}</div>`
         ).join('');
 
         box.innerHTML = `
@@ -194,19 +202,27 @@ handleEl.addEventListener('change', () => {
         document.getElementById('post-' + storyId).onclick = async () => {
           const txt = document.getElementById('comment-input-' + storyId).value.trim();
           if (!txt) return;
-          await fetch('/api/storyboard/comment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ story_id: storyId, body: txt, handle: 'Anon' })
-          });
-          loadComments(storyId);
+          const handle = (handleEl.value || localStorage.getItem('story_handle') || 'Anon').trim() || 'Anon';
+          try {
+            await fetch('/api/storyboard/comment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ story_id: storyId, body: txt, handle })
+            });
+            await loadComments(storyId);
+          } catch (e) {
+            alert('Comment failed: ' + e.message);
+          }
         };
       } catch (e) {
+        console.error('Comments error:', e);
         box.innerHTML = `<div class="comment">[Error: ${escapeHtml(e.message)}]</div>`;
       }
     }
 
+    // Initial load + periodic refresh
     loadStories();
+    setInterval(loadStories, 15000);
   </script>
 </body>
 </html>
