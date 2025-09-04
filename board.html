@@ -55,6 +55,25 @@
   <div id="stories"></div>
 
   <script>
+
+    // Anonymous user identity (same pattern as index.html)
+let clientId = localStorage.getItem('client_id');
+if (!clientId) {
+  clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+  localStorage.setItem('client_id', clientId);
+}
+   await fetch('/api/storyboard/react', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ story_id: id, value: 1, client_id: clientId })  // for like
+});
+
+await fetch('/api/storyboard/react', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ story_id: id, value: -1, client_id: clientId }) // for dislike
+});
+
     const storiesEl = document.getElementById('stories');
     const statusEl  = document.getElementById('status');
     const handleEl  = document.getElementById('handle');
