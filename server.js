@@ -1,12 +1,12 @@
 // ============================
-// server.js  (Game + Storyboard + Profiles)
+// server.js  (Game + Storyboard + Profiles + Reactions)
 // ============================
 /**
  * Local dev:
  *   npm install express cors dotenv node-fetch@2
- *   set OPENAI_API_KEY=sk-... (Windows CMD) | export OPENAI_API_KEY=sk-...
+ *   set OPENAI_API_KEY=sk-...        (Windows CMD) | export OPENAI_API_KEY=sk-...
  *   set SUPABASE_URL=https://xxxxx.supabase.co
- *   set SUPABASE_SERVICE_ROLE=xxxxx
+ *   set SUPABASE_SERVICE_ROLE=xxxxxx
  *   set PORT=8787
  *   node server.js
  *
@@ -30,7 +30,6 @@ app.use(express.json());
 // ---------- Static ----------
 app.use(express.static(__dirname));
 app.get('/', (_req, res) => {
-  // If you have a home.html, serve it; otherwise index.html
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
@@ -148,7 +147,6 @@ STYLE:
       text = "The narrator hesitates, then continues cautiously. (Fallback)";
     }
 
-    // sanitize narrator output to keep site PG-13
     text = sanitizeText(text);
 
     return res.json({ text });
@@ -178,7 +176,7 @@ async function sb(path, init = {}) {
 }
 
 /**
- * Make sure your DB has:
+ * DB expected:
  *
  * create table if not exists stories (
  *   id uuid primary key default gen_random_uuid(),
@@ -206,11 +204,18 @@ async function sb(path, init = {}) {
  *   updated_at timestamp with time zone default now()
  * );
  *
- * create index if not exists idx_stories_created on stories(created_at desc);
+ * create table if not exists story_reactions (
+ *   story_id uuid references stories(id) on delete cascade,
+ *   client_id text not null,
+ *   value int not null check (value in (-1,0,1)), -- 1 like, -1 dislike, 0 clear
+ *   created_at timestamp with time zone default now(),
+ *   updated_at timestamp with time zone default now(),
+ *   primary key (story_id, client_id)
+ * );
  */
 
 // ========== Profiles (anonymous nickname persistence) ==========
-// Save or update a nickname for a given client_id
+
 app.post('/api/profile/set', async (req, res) => {
   try {
     const { client_id, nickname } = req.body;
@@ -229,7 +234,6 @@ app.post('/api/profile/set', async (req, res) => {
   }
 });
 
-// Get a nickname for a given client_id
 app.get('/api/profile/get', async (req, res) => {
   try {
     const { client_id } = req.query;
@@ -243,7 +247,7 @@ app.get('/api/profile/get', async (req, res) => {
 });
 
 // ========== Storyboard (share/list/react/comments) ==========
-// Share a story
+
 app.post('/api/storyboard/share', async (req, res) => {
   try {
     const { title, mood, drama, content, author } = req.body;
@@ -268,7 +272,6 @@ app.post('/api/storyboard/share', async (req, res) => {
   }
 });
 
-// List recent stories
 app.get('/api/storyboard/list', async (_req, res) => {
   try {
     const rows = await sb('/stories?select=*&order=created_at.desc&limit=30');
@@ -278,7 +281,7 @@ app.get('/api/storyboard/list', async (_req, res) => {
   }
 });
 
-// One-reaction-per-user enforcement with upsert + recount
+// NEW: One-reaction-per-user enforcement with upsert + recount
 app.post('/api/storyboard/react', async (req, res) => {
   try {
     const { story_id, value, client_id } = req.body; // value: 1, -1, or 0 (clear)
@@ -294,15 +297,13 @@ app.post('/api/storyboard/react', async (req, res) => {
       body: JSON.stringify([{ story_id, client_id, value: v }])
     });
 
-    // Recompute totals
-    const likesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.1&select=count`);
-    const dislikesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.-1&select=count`);
+    // Recompute totals (simplest: count rows)
+    const likesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.1&select=client_id`);
+    const dislikesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.-1&select=client_id`);
+    const likes = Array.isArray(likesRows) ? likesRows.length : 0;
+    const dislikes = Array.isArray(dislikesRows) ? dislikesRows.length : 0;
 
-    // PostgREST returns [{count: "N"}] when using select=count
-    const likes = Number(likesRows?.[0]?.count || 0);
-    const dislikes = Number(dislikesRows?.[0]?.count || 0);
-
-    // Persist back to stories for fast listing
+    // Save back to stories for fast listing
     const [updated] = await sb('/stories?id=eq.' + story_id, {
       method: 'PATCH',
       body: JSON.stringify({ likes, dislikes })
@@ -314,8 +315,6 @@ app.post('/api/storyboard/react', async (req, res) => {
   }
 });
 
-
-// Post a comment
 app.post('/api/storyboard/comment', async (req, res) => {
   try {
     const { story_id, handle, body } = req.body;
@@ -332,7 +331,6 @@ app.post('/api/storyboard/comment', async (req, res) => {
   }
 });
 
-// List comments
 app.get('/api/storyboard/comments', async (req, res) => {
   try {
     const { story_id } = req.query;
@@ -350,4 +348,3 @@ const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
-
