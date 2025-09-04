@@ -1,5 +1,5 @@
 // ============================
-// server.js  (Game + Storyboard + Profiles + Reactions)
+// server.js  (Game + Storyboard + Profiles + One-Like-Per-User)
 // ============================
 /**
  * Local dev:
@@ -204,10 +204,11 @@ async function sb(path, init = {}) {
  *   updated_at timestamp with time zone default now()
  * );
  *
+ * -- We keep story_reactions but only use value=1 for likes now
  * create table if not exists story_reactions (
  *   story_id uuid references stories(id) on delete cascade,
  *   client_id text not null,
- *   value int not null check (value in (-1,0,1)), -- 1 like, -1 dislike, 0 clear
+ *   value int not null check (value in (1)), -- only 1 = like
  *   created_at timestamp with time zone default now(),
  *   updated_at timestamp with time zone default now(),
  *   primary key (story_id, client_id)
@@ -215,7 +216,6 @@ async function sb(path, init = {}) {
  */
 
 // ========== Profiles (anonymous nickname persistence) ==========
-
 app.post('/api/profile/set', async (req, res) => {
   try {
     const { client_id, nickname } = req.body;
@@ -246,8 +246,7 @@ app.get('/api/profile/get', async (req, res) => {
   }
 });
 
-// ========== Storyboard (share/list/react/comments) ==========
-
+// ========== Storyboard (share/list/comments) ==========
 app.post('/api/storyboard/share', async (req, res) => {
   try {
     const { title, mood, drama, content, author } = req.body;
@@ -281,40 +280,43 @@ app.get('/api/storyboard/list', async (_req, res) => {
   }
 });
 
-// NEW: One-reaction-per-user enforcement with upsert + recount
+// ========== One-like-per-user ==========
+/**
+ * POST /api/storyboard/react
+ * Body: { story_id, client_id }
+ * Behavior: Upsert a like (value=1). If already liked, does nothing.
+ * Then recount likes from story_reactions and persist to stories.likes.
+ */
 app.post('/api/storyboard/react', async (req, res) => {
   try {
-    const { story_id, value, client_id } = req.body; // value: 1, -1, or 0 (clear)
-    const v = Number(value);
-
-    if (!story_id || !client_id || ![-1, 0, 1].includes(v)) {
-      return res.status(400).json({ error: "Invalid payload (need story_id, client_id, value ∈ {-1,0,1})" });
+    const { story_id, client_id } = req.body;
+    if (!story_id || !client_id) {
+      return res.status(400).json({ error: "Invalid payload (need story_id, client_id)" });
     }
 
-    // Upsert reaction
+    // Upsert like (value=1). Primary key (story_id, client_id) prevents duplicates.
     await sb('/story_reactions', {
       method: 'POST',
-      body: JSON.stringify([{ story_id, client_id, value: v }])
+      body: JSON.stringify([{ story_id, client_id, value: 1 }])
     });
 
-    // Recompute totals (simplest: count rows)
-    const likesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.1&select=client_id`);
-    const dislikesRows = await sb(`/story_reactions?story_id=eq.${story_id}&value=eq.-1&select=client_id`);
-    const likes = Array.isArray(likesRows) ? likesRows.length : 0;
-    const dislikes = Array.isArray(dislikesRows) ? dislikesRows.length : 0;
+    // Recompute likes
+    const likeRows = await sb(`/story_reactions?story_id=eq.${story_id}&select=client_id`);
+    const likes = Array.isArray(likeRows) ? likeRows.length : 0;
 
-    // Save back to stories for fast listing
+    // Save back to stories
     const [updated] = await sb('/stories?id=eq.' + story_id, {
       method: 'PATCH',
-      body: JSON.stringify({ likes, dislikes })
+      body: JSON.stringify({ likes })
     });
 
-    res.json({ ok: true, story: updated, likes, dislikes });
+    res.json({ ok: true, story: updated, likes });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
+// Comments
 app.post('/api/storyboard/comment', async (req, res) => {
   try {
     const { story_id, handle, body } = req.body;
