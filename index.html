@@ -1,352 +1,293 @@
-<a href="/board.html" style="color:#00ff66; text-decoration:none; border:1px solid #00ff66; padding:6px 10px; border-radius:6px;">
-  📖 View Storyboard
-</a>
-
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>AI Story Adventure</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      /* Matrix-style look */
-      body {
-        font-family: "Courier New", monospace;
-        background: #000;
-        color: #00ff66;
-        margin: 20px;
-      }
+<head>
+  <meta charset="utf-8" />
+  <title>AI Story Adventure</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* ===== Matrix theme ===== */
+    :root { --green:#00ff66; --pad:14px; }
+    html,body { height:100%; }
+    body {
+      margin: 20px;
+      background: #000;
+      color: var(--green);
+      font-family: "Courier New", monospace;
+    }
+    h1 { margin: 0 0 10px; text-shadow: 0 0 10px var(--green); }
 
-      h1 {
-        text-align: center;
-        color: #00ff66;
-        text-shadow: 0 0 10px #00ff66;
-        margin-bottom: 20px;
-      }
-      <div class="topbar">
-  <a class="btn" href="/board.html">📖 View Storyboard</a>
+    /* Top bar + controls */
+    .topbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    a.btn, button, select, input, textarea {
+      border: 1px solid var(--green);
+      color: var(--green);
+      background:#000;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-family: inherit;
+    }
+    a.btn { text-decoration:none; }
+    a.btn:hover, button:hover { background: var(--green); color:#000; }
+    label { opacity:.9; }
+    select, input[type="range"], input[type="text"] { padding: 6px 10px; }
+    .small { font-size: 12px; opacity: .85; margin-left:auto; }
 
-  <label for="handle">Nickname:</label>
-  <input id="handle" type="text" placeholder="Anon" style="width:140px;" />
-  <button id="share">Share story</button>
+    /* Story pane */
+    #story {
+      white-space: pre-wrap;
+      border: 1px solid var(--green);
+      padding: var(--pad);
+      border-radius: 12px;
+      min-height: 260px;
+      background: #030303;
+      box-shadow: 0 0 8px rgba(0,255,102,.2);
+      overflow-y:auto;
+    }
 
-  <div class="small"><span id="health">Checking server…</span></div>
-</div>
+    /* Input area */
+    textarea {
+      width: 100%;
+      height: 96px;
+      margin-top: 10px;
+      border-radius: 12px;
+      padding: var(--pad);
+      resize: vertical;
+    }
+    .buttons { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+    .meter { display:flex; align-items:center; gap:8px; }
+    .range { width:170px; }
 
-      .bar {
-        display: flex; justify-content: space-between; align-items: center;
-        margin-bottom: 16px; padding: 10px;
-        border: 1px solid #00ff66; border-radius: 6px; background: #0a0a0a;
-      }
+    /* Thinking dots animation */
+    .thinking { display:inline-block; letter-spacing:4px; }
+    .thinking span { opacity:.2; animation: blink 1.2s infinite; }
+    .thinking span:nth-child(2){ animation-delay:.2s }
+    .thinking span:nth-child(3){ animation-delay:.4s }
+    @keyframes blink { 0%,20%{opacity:.2} 50%{opacity:1} 100%{opacity:.2} }
 
-      .controls { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-      label { font-size: 14px; }
-      select, input[type=range] {
-        background: #000; color: #00ff66; border: 1px solid #00ff66; border-radius: 6px; padding: 4px 6px;
-      }
-      #dramaValue { min-width: 20px; display: inline-block; text-align: center; }
+    /* Scanline effect */
+    body::after {
+      content:""; position:fixed; inset:0; pointer-events:none;
+      background: repeating-linear-gradient(to bottom, rgba(0,255,102,.08) 0px, rgba(0,255,102,.05) 2px, transparent 4px);
+      animation: flicker 1.5s infinite;
+    }
+    @keyframes flicker { 0%{opacity:.9} 50%{opacity:.7} 100%{opacity:.9} }
+  </style>
+</head>
+<body>
+  <h1>AI Story Adventure</h1>
 
-      #story {
-        background: #0a0a0a; border: 1px solid #00ff66; border-radius: 8px;
-        padding: 16px; min-height: 250px; overflow-y: auto; box-shadow: 0 0 12px #00ff66 inset;
-      }
+  <!-- ===== Navigation & Controls ===== -->
+  <div class="topbar">
+    <a class="btn" href="/board.html">📖 View Storyboard</a>
 
-      .line { margin: 8px 0; }
-      .role { color: #00ff66; font-weight: bold; }
-      .you .role { color: #33ffaa; }
-      .system .role { color: #66ffcc; }
+    <label for="mood">Mood:</label>
+    <select id="mood" aria-label="Story mood">
+      <option value="horror">Horror</option>
+      <option value="romance">Romance</option>
+      <option value="sci-fi">Sci-Fi</option>
+      <option value="fantasy">Fantasy</option>
+      <option value="mystery">Mystery</option>
+      <option value="comedy">Comedy</option>
+      <option value="noir">Detective Noir</option>
+    </select>
 
-      textarea {
-        width: 100%; height: 90px; margin-top: 12px;
-        border-radius: 6px; border: 1px solid #00ff66; background: #000; color: #00ff66;
-        padding: 12px; resize: none; font-family: "Courier New", monospace;
-      }
-
-      .buttons { display: flex; gap: 10px; margin-top: 10px; }
-      button {
-        flex: 1; padding: 12px; cursor: pointer; border-radius: 6px;
-        border: 1px solid #00ff66; background: #000; color: #00ff66; font-weight: bold;
-        text-transform: uppercase; transition: all 0.2s;
-      }
-      button:hover { background: #00ff66; color: #000; box-shadow: 0 0 10px #00ff66; }
-      button.primary { background: #003300; }
-      button.primary:hover { background: #00ff66; color: #000; }
-
-      .small { font-size: 12px; opacity: 0.8; }
-      .note { margin-top: 10px; opacity: 0.8; }
-
-      /* Screen scanlines */
-      body::after {
-        content: ""; position: fixed; inset: 0; pointer-events: none;
-        background: repeating-linear-gradient(to bottom,
-          rgba(0, 255, 102, 0.08) 0px,
-          rgba(0, 255, 102, 0.05) 2px,
-          transparent 4px);
-        animation: flicker 1.5s infinite;
-      }
-      @keyframes flicker { 0%{opacity:.9} 50%{opacity:.7} 100%{opacity:.9} }
-
-      /* Thinking dots */
-      .thinking { display: inline-flex; gap: 6px; align-items: center; }
-      .dot {
-        width: 6px; height: 6px; border-radius: 50%; background: #004d26;
-        box-shadow: 0 0 0px #00ff66;
-        animation: pulse 1s infinite ease-in-out;
-      }
-      .dot:nth-child(1){ animation-delay: 0s; }
-      .dot:nth-child(2){ animation-delay: .2s; }
-      .dot:nth-child(3){ animation-delay: .4s; }
-      @keyframes pulse {
-        0%   { background:#004d26; box-shadow:0 0 0px #00ff66; transform: translateY(0); }
-        50%  { background:#00ff66; box-shadow:0 0 10px #00ff66; transform: translateY(-2px); }
-        100% { background:#004d26; box-shadow:0 0 0px #00ff66; transform: translateY(0); }
-      }
-
-      /* Caret for typing effect */
-      .caret {
-        display:inline-block; width:8px; height:1.1em; background:#00ff66; margin-left:2px;
-        animation: caretBlink .8s steps(1) infinite;
-      }
-      @keyframes caretBlink { 0%{opacity:1} 50%{opacity:0} 100%{opacity:1} }
-    </style>
-  </head>
-  <body>
-    <h1>AI Story Adventure</h1>
-
-    <div class="bar">
-      <div class="controls">
-        <label for="mood">Story mood:</label>
-        <select id="mood">
-          <option value="horror">Horror</option>
-          <option value="romance">Romance</option>
-          <option value="sci-fi">Sci-Fi</option>
-          <option value="fantasy">Fantasy</option>
-          <option value="mystery">Mystery</option>
-          <option value="comedy">Comedy</option>
-          <option value="noir">Detective Noir</option>
-        </select>
-
-        <label for="drama">Dramatic:</label>
-        <input id="drama" type="range" min="1" max="5" step="1" value="3">
-        <span id="dramaValue">3</span>
-      </div>
-      <div class="small">
-        <span id="health">Checking server…</span>
-      </div>
+    <div class="meter" aria-label="Dramatic scale">
+      <label for="drama">Dramatic:</label>
+      <input id="drama" class="range" type="range" min="1" max="5" step="1" value="3" />
+      <span id="dramaVal">3</span>
     </div>
 
-    <div id="story">
-      <div class="line system"><span class="role">System:</span> Your story begins here…</div>
+    <label for="handle">Nickname:</label>
+    <input id="handle" type="text" placeholder="Anon" style="width:140px;" />
+    <button id="share" title="Share the current story to the community board">Share story</button>
+
+    <div class="small"><span id="health">Checking server…</span></div>
+  </div>
+
+  <!-- ===== Story Window ===== -->
+  <div id="story" aria-live="polite">Your story begins here…</div>
+
+  <!-- ===== Player Input ===== -->
+  <div style="margin-top:10px;">
+    <h3>Your turn:</h3>
+    <textarea id="input" placeholder="Write the next part… (e.g., “The group enters a dark tunnel.”)"></textarea>
+    <div class="buttons">
+      <button id="send">Continue</button>
+      <button id="reset">Reset</button>
     </div>
+    <div class="small">Tip: keep turns short (1–2 sentences) for snappier pacing and lower costs.</div>
+  </div>
 
-    <div class="row" style="margin-top:14px;">
-      <h3>Your turn:</h3>
-      <textarea id="input" placeholder="Write the next part…"></textarea>
-      <div class="buttons">
-        <button id="send" class="primary">Continue</button>
-        <button id="reset">Reset</button>
-      </div>
-      <div class="note small">
-        Tip: keep turns short (1–2 sentences) for snappier pacing and lower costs.
-      </div>
-    </div>
+  <script>
+    /* ===== Element refs ===== */
+    const storyEl  = document.getElementById('story');
+    const inputEl  = document.getElementById('input');
+    const sendBtn  = document.getElementById('send');
+    const resetBtn = document.getElementById('reset');
+    const moodEl   = document.getElementById('mood');
+    const dramaEl  = document.getElementById('drama');
+    const dramaVal = document.getElementById('dramaVal');
+    const healthEl = document.getElementById('health');
+    const shareBtn = document.getElementById('share');
+    const handleEl = document.getElementById('handle');
 
-    <script>
-      const shareBtn = document.getElementById('share');
-const handleEl = document.getElementById('handle');
-
-// Load saved handle
-handleEl.value = localStorage.getItem('story_handle') || '';
-handleEl.addEventListener('change', () => {
-  localStorage.setItem('story_handle', handleEl.value.trim());
-});
-
-function currentStoryText() {
-  return document.getElementById('story').textContent.trim();
-}
-
-shareBtn.onclick = async () => {
-  const content = currentStoryText();
-  if (!content || content === 'Your story begins here…') {
-    alert('Write some story first!');
-    return;
-  }
-  const title = prompt('Story title?', 'Untitled adventure') || 'Untitled adventure';
-  const mood = document.getElementById('mood').value;
-  const drama = document.getElementById('drama').value || 3;
-  const author = handleEl.value.trim() || 'Anon';
-
-  try {
-    const r = await fetch('/api/storyboard/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, mood, drama, content, author })
+    /* ===== Persistent nickname ===== */
+    handleEl.value = localStorage.getItem('story_handle') || '';
+    handleEl.addEventListener('change', () => {
+      localStorage.setItem('story_handle', handleEl.value.trim());
     });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Failed to share');
-    alert('Shared! Opening storyboard…');
-    window.location.href = '/board.html';
-  } catch (e) {
-    alert('Share failed: ' + e.message);
-  }
-};
 
-      const storyEl = document.getElementById('story');
-      const inputEl = document.getElementById('input');
-      const sendBtn = document.getElementById('send');
-      const resetBtn = document.getElementById('reset');
-      const moodEl = document.getElementById('mood');
-      const dramaEl = document.getElementById('drama');
-      const dramaValueEl = document.getElementById('dramaValue');
-      const healthEl = document.getElementById('health');
+    /* ===== Dramatic scale display ===== */
+    dramaVal.textContent = dramaEl.value;
+    dramaEl.addEventListener('input', () => {
+      dramaVal.textContent = dramaEl.value;
+    });
 
-      let history = []; // { role: 'user'|'assistant', content: string }
+    /* ===== Story state (history for context) ===== */
+    let history = []; // each item: { role: 'user'|'assistant', content: string }
+    const MAX_TURNS_MEMORY = 8;
 
-      // Update drama value UI
-      dramaEl.oninput = () => dramaValueEl.textContent = dramaEl.value;
+    function pushToStory(text, who) {
+      storyEl.textContent += `\n\n${who}: ${text}`;
+      storyEl.scrollTop = storyEl.scrollHeight;
+    }
 
-      // Health check
-      async function checkHealth() {
-        try {
-          const r = await fetch('/api/health');
-          const j = await r.json();
-          healthEl.textContent = j.hasKey
-            ? 'Server OK (API key loaded)'
-            : 'Server OK (no API key)';
-        } catch {
-          healthEl.textContent = 'Server unreachable';
-        }
+    function compactHistoryIfNeeded() {
+      if (history.length > MAX_TURNS_MEMORY * 2) {
+        const tail = storyEl.textContent.slice(-1600);
+        history = [{ role: 'assistant', content: 'Recap so far:\n' + tail }];
       }
-      checkHealth();
+    }
 
-      // Helpers to append lines and effects
-      function appendLine(role, text = "") {
-        const line = document.createElement('div');
-        line.className = `line ${role.toLowerCase()}`;
-        line.innerHTML = `<span class="role">${role}:</span> <span class="content">${escapeHtml(text)}</span>`;
-        storyEl.appendChild(line);
+    /* ===== Robust health check ===== */
+    async function checkHealth() {
+      try {
+        const url = window.location.origin + '/api/health';
+        const r = await fetch(url, { cache: 'no-store' });
+        const j = await r.json();
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        healthEl.textContent = j.hasKey
+          ? 'Server OK (API key loaded)'
+          : 'Server OK (no API key)';
+      } catch (err) {
+        console.error('Health check failed:', err);
+        healthEl.textContent = 'Server unreachable';
+      }
+    }
+    window.addEventListener('load', checkHealth);
+
+    /* ===== Typing effect for narrator ===== */
+    function typeText(fullText, whoLabel = 'Narrator') {
+      let i = 0;
+      const prefix = `\n\n${whoLabel}: `;
+      storyEl.textContent += prefix;
+      const timer = setInterval(() => {
+        storyEl.textContent += fullText.charAt(i++);
         storyEl.scrollTop = storyEl.scrollHeight;
-        return line.querySelector('.content');
-      }
+        if (i >= fullText.length) clearInterval(timer);
+      }, 18);
+    }
 
-      function showThinkingPlaceholder() {
-        const line = document.createElement('div');
-        line.className = 'line narrator';
-        line.innerHTML = `
-          <span class="role">Narrator:</span>
-          <span class="content">
-            <span class="thinking">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            </span>
-          </span>`;
-        storyEl.appendChild(line);
-        storyEl.scrollTop = storyEl.scrollHeight;
-        return line.querySelector('.content'); // return the content span we will replace
+    /* ===== Thinking dots line ===== */
+    let thinkingNode = null;
+    function showThinking() {
+      const tmp = document.createElement('div');
+      tmp.textContent = '\n\nNarrator: ';
+      const dots = document.createElement('span');
+      dots.className = 'thinking';
+      dots.innerHTML = '<span>•</span><span>•</span><span>•</span>';
+      storyEl.appendChild(tmp);
+      storyEl.appendChild(dots);
+      storyEl.scrollTop = storyEl.scrollHeight;
+      thinkingNode = { tmp, dots };
+    }
+    function hideThinking() {
+      if (thinkingNode) {
+        thinkingNode.tmp.remove();
+        thinkingNode.dots.remove();
+        thinkingNode = null;
       }
+    }
 
-      function clearNode(el) {
-        while (el.firstChild) el.removeChild(el.firstChild);
-      }
+    /* ===== Continue turn ===== */
+    sendBtn.onclick = async () => {
+      const userTurn = inputEl.value.trim();
+      if (!userTurn) return;
 
-      // Typing effect
-      async function typeText(targetEl, text, cps = 45) {
-        // cps = characters per second (approx). 45 cps ~ 22ms per char.
-        const delay = Math.max(8, Math.floor(1000 / cps));
-        return new Promise(resolve => {
-          let i = 0;
-          const caret = document.createElement('span');
-          caret.className = 'caret';
-          const timer = setInterval(() => {
-            targetEl.textContent += text[i] || '';
-            i++;
-            if (!caret.isConnected) targetEl.appendChild(caret);
-            storyEl.scrollTop = storyEl.scrollHeight;
-            if (i >= text.length) {
-              clearInterval(timer);
-              // small pause then remove caret
-              setTimeout(() => { if (caret.parentNode) caret.parentNode.removeChild(caret); resolve(); }, 150);
-            }
-          }, delay);
+      inputEl.value = '';
+      pushToStory(userTurn, 'You');
+      history.push({ role: 'user', content: userTurn });
+
+      try {
+        compactHistoryIfNeeded();
+        showThinking();
+
+        const res = await fetch(window.location.origin + '/api/continue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            history,
+            userTurn,
+            mood: moodEl.value,
+            drama: dramaEl.value
+          })
         });
-      }
 
-      // Security for innerHTML
-      function escapeHtml(str) {
-        return String(str)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-      }
+        const data = await res.json().catch(() => ({}));
+        hideThinking();
 
-      // Keep context small
-      const MAX_TURNS_MEMORY = 8;
-      function compactHistoryIfNeeded() {
-        if (history.length > MAX_TURNS_MEMORY * 2) {
-          // Use current story text as a quick recap
-          const allLines = Array.from(storyEl.querySelectorAll('.line'))
-            .map(l => l.textContent).join('\n').slice(-1200);
-          history = [{ role: 'assistant', content: 'Recap so far:\n' + allLines }];
+        if (!res.ok) {
+          const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
+          throw new Error(msg);
         }
+
+        const aiText = (data.text || '[Empty response]').trim();
+        typeText(aiText, 'Narrator');
+        history.push({ role: 'assistant', content: aiText });
+      } catch (e) {
+        hideThinking();
+        pushToStory('[Error: ' + e.message + ']', 'System');
       }
+    };
 
-      // Actions
-      sendBtn.onclick = async () => {
-        const userTurn = inputEl.value.trim();
-        if (!userTurn) return;
+    /* ===== Reset session ===== */
+    resetBtn.onclick = () => {
+      history = [];
+      storyEl.textContent = 'Your story begins here…';
+      inputEl.value = '';
+    };
 
-        inputEl.value = '';
+    /* ===== Gather full story text ===== */
+    function currentStoryText() {
+      return storyEl.textContent.trim();
+    }
 
-        appendLine('You', userTurn);
-        history.push({ role: 'user', content: userTurn });
+    /* ===== Share to Storyboard ===== */
+    shareBtn.onclick = async () => {
+      const content = currentStoryText();
+      if (!content || content === 'Your story begins here…') {
+        alert('Write a bit of story first!');
+        return;
+      }
+      const title = prompt('Story title?', 'Untitled adventure') || 'Untitled adventure';
+      const mood = moodEl.value;
+      const drama = dramaEl.value;
+      const author = handleEl.value.trim() || 'Anon';
 
-        // Show animated thinking dots where the narrator reply will go
-        const contentSpan = showThinkingPlaceholder();
-
-        try {
-          compactHistoryIfNeeded();
-
-          const res = await fetch('/api/continue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              history,
-              userTurn,
-              mood: moodEl.value,
-              drama: dramaEl.value
-            })
-          });
-
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            const msg = (data && data.error) ? data.error : `HTTP ${res.status}`;
-            clearNode(contentSpan);
-            contentSpan.textContent = `[Error: ${msg}]`;
-            contentSpan.parentElement.parentElement.classList.add('system');
-            return;
-          }
-
-          // Replace dots with typing text
-          const aiText = data.text || '[Empty response]';
-          clearNode(contentSpan);
-          await typeText(contentSpan, aiText, 50); // ~50 cps feels nice
-
-          history.push({ role: 'assistant', content: aiText });
-
-        } catch (e) {
-          clearNode(contentSpan);
-          contentSpan.textContent = `[Error: ${e.message}]`;
-          contentSpan.parentElement.parentElement.classList.add('system');
-        } finally {
-          storyEl.scrollTop = storyEl.scrollHeight;
-        }
-      };
-
-      resetBtn.onclick = () => {
-        history = [];
-        storyEl.innerHTML = `<div class="line system"><span class="role">System:</span> Your story begins here…</div>`;
-      };
-    </script>
-  </body>
+      try {
+        const r = await fetch(window.location.origin + '/api/storyboard/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, mood, drama, content, author })
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Failed to share');
+        alert('Shared! Opening storyboard…');
+        window.location.href = '/board.html';
+      } catch (e) {
+        alert('Share failed: ' + e.message);
+      }
+    };
+  </script>
+</body>
 </html>
-
-
