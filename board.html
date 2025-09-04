@@ -24,6 +24,7 @@
     .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .actions button { background:#000; color:#00ff66; border:1px solid #00ff66; padding:6px 10px; border-radius:6px; cursor:pointer; }
     .actions button:hover { background:#00ff66; color:#000; }
+    .actions button[disabled] { opacity:.5; cursor:not-allowed; }
 
     .comments { margin-top:10px; padding-left:10px; border-left:1px dashed #00ff66; }
     .comment { margin:6px 0; font-size:13px; }
@@ -116,10 +117,8 @@
           </div>
           <div class="content">${escapeHtml(preview)}${(s.content && s.content.length > 1200) ? '…' : ''}</div>
           <div class="actions">
-            <span id="counts-${s.id}">👍 ${s.likes || 0} · 👎 ${s.dislikes || 0}</span>
+            <span id="counts-${s.id}">👍 ${s.likes || 0}</span>
             <button data-like="${s.id}">Like</button>
-            <button data-dislike="${s.id}">Dislike</button>
-            <button data-clear="${s.id}">Clear</button>
             <button data-toggle-comments="${s.id}">Comments</button>
           </div>
           <div id="comments-${s.id}" class="comments" style="display:none;"></div>
@@ -133,57 +132,21 @@
       storiesEl.querySelectorAll('button[data-like]').forEach(btn => {
         btn.onclick = async () => {
           const id = btn.getAttribute('data-like');
-          optimisticCount(id, 1);
+          // Optimistically disable to signal one-like
+          btn.disabled = true;
           try {
             await fetch('/api/storyboard/react', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ story_id: id, value: 1, client_id: clientId })
+              body: JSON.stringify({ story_id: id, client_id: clientId })
             });
           } catch (e) { console.warn('Like failed:', e); }
-          setTimeout(loadStories, 800);
-        };
-      });
-      storiesEl.querySelectorAll('button[data-dislike]').forEach(btn => {
-        btn.onclick = async () => {
-          const id = btn.getAttribute('data-dislike');
-          optimisticCount(id, -1);
-          try {
-            await fetch('/api/storyboard/react', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ story_id: id, value: -1, client_id: clientId })
-            });
-          } catch (e) { console.warn('Dislike failed:', e); }
-          setTimeout(loadStories, 800);
-        };
-      });
-      storiesEl.querySelectorAll('button[data-clear]').forEach(btn => {
-        btn.onclick = async () => {
-          const id = btn.getAttribute('data-clear');
-          try {
-            await fetch('/api/storyboard/react', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ story_id: id, value: 0, client_id: clientId })
-            });
-          } catch (e) { console.warn('Clear failed:', e); }
-          setTimeout(loadStories, 800);
+          setTimeout(loadStories, 600);
         };
       });
       storiesEl.querySelectorAll('button[data-toggle-comments]').forEach(btn => {
         btn.onclick = () => toggleComments(btn.getAttribute('data-toggle-comments'));
       });
-    }
-
-    function optimisticCount(id, delta) {
-      const span = document.getElementById('counts-' + id);
-      if (!span) return;
-      const m = span.textContent.match(/👍\s*(\d+)\s*·\s*👎\s*(\d+)/);
-      if (!m) return;
-      let up = parseInt(m[1], 10), down = parseInt(m[2], 10);
-      if (delta === 1) up++; else down++;
-      span.textContent = `👍 ${up} · 👎 ${down}`;
     }
 
     async function toggleComments(storyId) {
