@@ -1,5 +1,5 @@
 // ============================
-// server.js  (Game + Storyboard + Profiles + One-Like-Per-User)
+// server.js  (Game + Storyboard + Profiles + One-Like-Per-User + Filterable List)
 // ============================
 /**
  * Local dev:
@@ -29,9 +29,7 @@ app.use(express.json());
 
 // ---------- Static ----------
 app.use(express.static(__dirname));
-app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('/', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // ---------- Health ----------
 app.get('/api/health', (_req, res) => {
@@ -69,18 +67,12 @@ function mapDramaToTemp(drama) {
 }
 function dramaInstructions(drama) {
   switch (String(drama)) {
-    case "1":
-      return "Narration style: Very plain and simple. Short sentences. Minimal description.";
-    case "2":
-      return "Narration style: Simple narration with occasional description.";
-    case "3":
-      return "Narration style: Balanced detail. Moderate description, engaging but not theatrical.";
-    case "4":
-      return "Narration style: Dramatic with vivid imagery and suspense.";
-    case "5":
-      return "Narration style: Highly dramatic and theatrical. Rich detail and powerful emotions.";
-    default:
-      return "Narration style: Balanced detail, engaging but not theatrical.";
+    case "1": return "Narration style: Very plain and simple. Short sentences. Minimal description.";
+    case "2": return "Narration style: Simple narration with occasional description.";
+    case "3": return "Narration style: Balanced detail. Moderate description, engaging but not theatrical.";
+    case "4": return "Narration style: Dramatic with vivid imagery and suspense.";
+    case "5": return "Narration style: Highly dramatic and theatrical. Rich detail and powerful emotions.";
+    default:  return "Narration style: Balanced detail, engaging but not theatrical.";
   }
 }
 
@@ -127,28 +119,19 @@ STYLE:
     });
 
     const raw = await response.text();
-    if (!response.ok) {
-      return res.status(500).json({ error: `OpenAI error: ${raw}` });
-    }
+    if (!response.ok) return res.status(500).json({ error: `OpenAI error: ${raw}` });
 
     let text = '…';
     try {
       const data = JSON.parse(raw);
-      if (data.output_text) {
-        text = data.output_text;
-      } else if (data.output && data.output[0]?.content?.[0]?.text) {
-        text = data.output[0].content[0].text;
-      }
-    } catch {
-      // keep fallback
-    }
+      if (data.output_text) text = data.output_text;
+      else if (data.output && data.output[0]?.content?.[0]?.text) text = data.output[0].content[0].text;
+    } catch { /* keep fallback */ }
 
     if (!text || text.trim() === '') {
       text = "The narrator hesitates, then continues cautiously. (Fallback)";
     }
-
     text = sanitizeText(text);
-
     return res.json({ text });
   } catch (err) {
     return res.status(500).json({ error: 'Server error', text: "(Server fallback)" });
@@ -177,76 +160,30 @@ async function sb(path, init = {}) {
 
 /**
  * DB expected:
- *
- * create table if not exists stories (
- *   id uuid primary key default gen_random_uuid(),
- *   title text not null,
- *   mood text,
- *   drama int check (drama between 1 and 5),
- *   content text not null,
- *   author text default 'Anon',
- *   likes int not null default 0,
- *   dislikes int not null default 0,
- *   created_at timestamp with time zone default now()
- * );
- *
- * create table if not exists story_comments (
- *   id uuid primary key default gen_random_uuid(),
- *   story_id uuid references stories(id) on delete cascade,
- *   handle text,
- *   body text not null,
- *   created_at timestamp with time zone default now()
- * );
- *
- * create table if not exists profiles (
- *   client_id text primary key,
- *   nickname  text not null,
- *   updated_at timestamp with time zone default now()
- * );
- *
- * -- We keep story_reactions but only use value=1 for likes now
- * create table if not exists story_reactions (
- *   story_id uuid references stories(id) on delete cascade,
- *   client_id text not null,
- *   value int not null check (value in (1)), -- only 1 = like
- *   created_at timestamp with time zone default now(),
- *   updated_at timestamp with time zone default now(),
- *   primary key (story_id, client_id)
- * );
+ *  - stories, story_comments, profiles, story_reactions (likes-only PK: story_id+client_id)
+ *  (same SQL you already ran)
  */
 
-// ========== Profiles (anonymous nickname persistence) ==========
+// ========== Profiles ==========
 app.post('/api/profile/set', async (req, res) => {
   try {
     const { client_id, nickname } = req.body;
     if (!client_id || !nickname) return res.status(400).json({ error: 'Missing client_id or nickname' });
-
-    const sanitized = { client_id, nickname: sanitizeText(nickname) };
-
-    const [row] = await sb('/profiles', {
-      method: 'POST',
-      body: JSON.stringify([sanitized])
-    });
-
+    const [row] = await sb('/profiles', { method: 'POST', body: JSON.stringify([{ client_id, nickname: sanitizeText(nickname) }]) });
     res.json({ ok: true, profile: row });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/profile/get', async (req, res) => {
   try {
     const { client_id } = req.query;
     if (!client_id) return res.status(400).json({ error: 'Missing client_id' });
-
     const rows = await sb(`/profiles?client_id=eq.${client_id}&select=*`);
     res.json({ profile: rows[0] || null });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== Storyboard (share/list/comments) ==========
+// ========== Storyboard ==========
 app.post('/api/storyboard/share', async (req, res) => {
   try {
     const { title, mood, drama, content, author } = req.body;
@@ -260,43 +197,63 @@ app.post('/api/storyboard/share', async (req, res) => {
       author: sanitizeText(author || 'Anon')
     };
 
-    const [story] = await sb('/stories', {
-      method: 'POST',
-      body: JSON.stringify([sanitized])
-    });
-
+    const [story] = await sb('/stories', { method: 'POST', body: JSON.stringify([sanitized]) });
     res.json({ ok: true, story });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get('/api/storyboard/list', async (_req, res) => {
+// ▶ Filterable list
+app.get('/api/storyboard/list', async (req, res) => {
   try {
-    const rows = await sb('/stories?select=*&order=created_at.desc&limit=30');
+    let path = '/stories?select=*';
+    const filters = [];
+
+    // title/author substring with ilike
+    if (req.query.title && req.query.title.trim()) {
+      const pat = `%${req.query.title.trim()}%`;
+      filters.push(`title=ilike.${encodeURIComponent(pat)}`);
+    }
+    if (req.query.author && req.query.author.trim()) {
+      const pat = `%${req.query.author.trim()}%`;
+      filters.push(`author=ilike.${encodeURIComponent(pat)}`);
+    }
+
+    // mood exact
+    if (req.query.mood && req.query.mood !== 'any') {
+      filters.push(`mood=eq.${encodeURIComponent(req.query.mood)}`);
+    }
+
+    // drama exact
+    if (req.query.drama && req.query.drama !== 'any') {
+      const d = String(req.query.drama).trim();
+      if (['1','2','3','4','5'].includes(d)) {
+        filters.push(`drama=eq.${d}`);
+      }
+    }
+
+    // attach filters
+    if (filters.length) path += '&' + filters.join('&');
+
+    // sort by most recent
+    const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 100);
+    path += `&order=created_at.desc&limit=${limit}`;
+
+    const rows = await sb(path);
     res.json({ stories: rows });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ========== One-like-per-user ==========
-/**
- * POST /api/storyboard/react
- * Body: { story_id, client_id }
- * Behavior: Upsert a like (value=1). If already liked, does nothing.
- * Then recount likes from story_reactions and persist to stories.likes.
- */
 app.post('/api/storyboard/react', async (req, res) => {
   try {
     const { story_id, client_id } = req.body;
-    if (!story_id || !client_id) {
-      return res.status(400).json({ error: "Invalid payload (need story_id, client_id)" });
-    }
+    if (!story_id || !client_id) return res.status(400).json({ error: "Invalid payload (need story_id, client_id)" });
 
-    // Upsert like (value=1). Primary key (story_id, client_id) prevents duplicates.
-    await sb('/story_reactions', {
+    // TRUE UPSERT to avoid 409 on repeat likes
+    const upsertHeaders = { 'Prefer': 'resolution=merge-duplicates,return=representation' };
+    await sb('/story_reactions?on_conflict=story_id,client_id', {
       method: 'POST',
+      headers: upsertHeaders,
       body: JSON.stringify([{ story_id, client_id, value: 1 }])
     });
 
@@ -304,16 +261,14 @@ app.post('/api/storyboard/react', async (req, res) => {
     const likeRows = await sb(`/story_reactions?story_id=eq.${story_id}&select=client_id`);
     const likes = Array.isArray(likeRows) ? likeRows.length : 0;
 
-    // Save back to stories
+    // Persist to stories
     const [updated] = await sb('/stories?id=eq.' + story_id, {
       method: 'PATCH',
       body: JSON.stringify({ likes })
     });
 
     res.json({ ok: true, story: updated, likes });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Comments
@@ -328,25 +283,18 @@ app.post('/api/storyboard/comment', async (req, res) => {
     });
 
     res.json({ ok: true, comment: row });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/storyboard/comments', async (req, res) => {
   try {
     const { story_id } = req.query;
     if (!story_id) return res.status(400).json({ error: "Missing story_id" });
-
     const rows = await sb(`/story_comments?story_id=eq.${story_id}&select=*&order=created_at.asc`);
     res.json({ comments: rows });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ---------- Start ----------
 const PORT = process.env.PORT || 8787;
-app.listen(PORT, () => {
-  console.log(`AI Story server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`AI Story server running on http://localhost:${PORT}`));
