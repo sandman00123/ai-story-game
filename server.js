@@ -79,6 +79,29 @@ function dramaInstructions(drama) {
       return "Narration style: Balanced detail, engaging but not too theatrical.";
   }
 }
+app.post('/api/storyboard/share', async (req, res) => {
+  try {
+    const { title, mood, drama, content, author } = req.body;
+    if (!title || !content) return res.status(400).json({ error: "Missing title or content" });
+
+    const sanitized = {
+      title: sanitizeText(title),
+      mood: sanitizeText(mood || ''),
+      drama: Number(drama) || 3,
+      content: sanitizeText(content),
+      author: sanitizeText(author || 'Anon')
+    };
+
+    const [story] = await sb('/stories', {
+      method: 'POST',
+      body: JSON.stringify([sanitized])
+    });
+
+    res.json({ ok: true, story });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.post('/api/continue', async (req, res) => {
   try {
@@ -284,3 +307,4 @@ const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
+
