@@ -1,21 +1,20 @@
 // ============================
-// server.js  (Game + Storyboard API)
+// server.js  (Game + Storyboard + Profiles)
 // ============================
 /**
- * Local dev quick start:
+ * Local dev:
  *   npm install express cors dotenv node-fetch@2
- *   set OPENAI_API_KEY=sk-... (Windows CMD) | export OPENAI_API_KEY=sk-... (bash)
+ *   set OPENAI_API_KEY=sk-... (Windows CMD) | export OPENAI_API_KEY=sk-...
+ *   set SUPABASE_URL=https://xxxxx.supabase.co
+ *   set SUPABASE_SERVICE_ROLE=xxxxx
  *   set PORT=8787
  *   node server.js
  *
- * Deploy (Render):
+ * Render:
  *   Build: npm install
  *   Start: node server.js
  *   Env vars:
- *     OPENAI_API_KEY=sk-...
- *     SUPABASE_URL=https://xxxxx.supabase.co
- *     SUPABASE_SERVICE_ROLE=xxxxx
- *     (Render provides PORT automatically)
+ *     OPENAI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE
  */
 
 const express = require('express');
@@ -30,6 +29,10 @@ app.use(express.json());
 
 // ---------- Static ----------
 app.use(express.static(__dirname));
+app.get('/', (_req, res) => {
+  // If you have a home.html, serve it; otherwise index.html
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // ---------- Health ----------
 app.get('/api/health', (_req, res) => {
@@ -48,7 +51,6 @@ function sanitizeText(text) {
   if (!text) return text;
   let out = text;
   for (const bw of BAD_WORDS) {
-    // word boundary to avoid partial replacements inside harmless words
     const re = new RegExp(`\\b${bw}\\b`, 'gi');
     out = out.replace(re, (m) => maskWord(m));
   }
@@ -155,7 +157,7 @@ STYLE:
   }
 });
 
-// ========== Storyboard (Supabase) ==========
+// ========== Supabase helper ==========
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -176,7 +178,7 @@ async function sb(path, init = {}) {
 }
 
 /**
- * Ensure your DB has:
+ * Make sure your DB has:
  *
  * create table if not exists stories (
  *   id uuid primary key default gen_random_uuid(),
@@ -198,9 +200,49 @@ async function sb(path, init = {}) {
  *   created_at timestamp with time zone default now()
  * );
  *
+ * create table if not exists profiles (
+ *   client_id text primary key,
+ *   nickname  text not null,
+ *   updated_at timestamp with time zone default now()
+ * );
+ *
  * create index if not exists idx_stories_created on stories(created_at desc);
  */
 
+// ========== Profiles (anonymous nickname persistence) ==========
+// Save or update a nickname for a given client_id
+app.post('/api/profile/set', async (req, res) => {
+  try {
+    const { client_id, nickname } = req.body;
+    if (!client_id || !nickname) return res.status(400).json({ error: 'Missing client_id or nickname' });
+
+    const sanitized = { client_id, nickname: sanitizeText(nickname) };
+
+    const [row] = await sb('/profiles', {
+      method: 'POST',
+      body: JSON.stringify([sanitized])
+    });
+
+    res.json({ ok: true, profile: row });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get a nickname for a given client_id
+app.get('/api/profile/get', async (req, res) => {
+  try {
+    const { client_id } = req.query;
+    if (!client_id) return res.status(400).json({ error: 'Missing client_id' });
+
+    const rows = await sb(`/profiles?client_id=eq.${client_id}&select=*`);
+    res.json({ profile: rows[0] || null });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== Storyboard (share/list/react/comments) ==========
 // Share a story
 app.post('/api/storyboard/share', async (req, res) => {
   try {
@@ -290,44 +332,9 @@ app.get('/api/storyboard/comments', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-// ========== Profiles (anonymous nickname persistence) ==========
-
-// Save or update a nickname for a given client_id
-app.post('/api/profile/set', async (req, res) => {
-  try {
-    const { client_id, nickname } = req.body;
-    if (!client_id || !nickname) return res.status(400).json({ error: 'Missing client_id or nickname' });
-
-    const sanitized = { client_id, nickname: sanitizeText(nickname) };
-
-    const [row] = await sb('/profiles', {
-      method: 'POST',
-      body: JSON.stringify([sanitized])
-    });
-
-    res.json({ ok: true, profile: row });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Get a nickname for a given client_id
-app.get('/api/profile/get', async (req, res) => {
-  try {
-    const { client_id } = req.query;
-    if (!client_id) return res.status(400).json({ error: 'Missing client_id' });
-
-    const rows = await sb(`/profiles?client_id=eq.${client_id}&select=*`);
-    res.json({ profile: rows[0] || null });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 
 // ---------- Start ----------
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`AI Story server running on http://localhost:${PORT}`);
 });
-
