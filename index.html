@@ -131,6 +131,49 @@
     const shareBtn = document.getElementById('share');
     const handleEl = document.getElementById('handle');
 
+    // ===== Anonymous profile system =====
+
+// Create or load a client_id (UUID)
+let clientId = localStorage.getItem('client_id');
+if (!clientId) {
+  clientId = crypto.randomUUID();
+  localStorage.setItem('client_id', clientId);
+}
+
+// Try to sync nickname with server if missing locally
+(async () => {
+  const localNick = localStorage.getItem('story_handle');
+  if (!localNick && clientId) {
+    try {
+      const r = await fetch('/api/profile/get?client_id=' + encodeURIComponent(clientId));
+      const j = await r.json();
+      if (j.profile?.nickname) {
+        localStorage.setItem('story_handle', j.profile.nickname);
+        document.getElementById('handle').value = j.profile.nickname;
+      }
+    } catch (e) {
+      console.warn('Profile fetch failed', e);
+    }
+  }
+})();
+
+// Save nickname locally AND on server
+function saveNickname(nick) {
+  localStorage.setItem('story_handle', nick);
+  fetch('/api/profile/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, nickname: nick })
+  }).catch(e => console.warn('Profile save failed', e));
+}
+
+// Hook to nickname input field
+const handleEl = document.getElementById('handle');
+handleEl.addEventListener('change', () => {
+  saveNickname(handleEl.value.trim());
+});
+
+
     /* ===== Persistent nickname ===== */
     handleEl.value = localStorage.getItem('story_handle') || '';
     handleEl.addEventListener('change', () => {
@@ -291,3 +334,4 @@
   </script>
 </body>
 </html>
+
