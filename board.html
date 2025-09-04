@@ -55,25 +55,6 @@
   <div id="stories"></div>
 
   <script>
-
-    // Anonymous user identity (same pattern as index.html)
-let clientId = localStorage.getItem('client_id');
-if (!clientId) {
-  clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
-  localStorage.setItem('client_id', clientId);
-}
-   await fetch('/api/storyboard/react', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ story_id: id, value: 1, client_id: clientId })  // for like
-});
-
-await fetch('/api/storyboard/react', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ story_id: id, value: -1, client_id: clientId }) // for dislike
-});
-
     const storiesEl = document.getElementById('stories');
     const statusEl  = document.getElementById('status');
     const handleEl  = document.getElementById('handle');
@@ -82,6 +63,13 @@ await fetch('/api/storyboard/react', {
     handleEl.value = localStorage.getItem('story_handle') || '';
     handleEl.onchange = () => localStorage.setItem('story_handle', handleEl.value.trim());
 
+    // Anonymous client_id (same as game)
+    let clientId = localStorage.getItem('client_id');
+    if (!clientId) {
+      clientId = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2));
+      localStorage.setItem('client_id', clientId);
+    }
+
     // Utilities
     function escapeHtml(str) {
       return String(str)
@@ -89,20 +77,18 @@ await fetch('/api/storyboard/react', {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
     }
+    function setStatus(msg) { statusEl.textContent = msg; }
 
-    function setStatus(msg) {
-      statusEl.textContent = msg;
-    }
-
-    // Load the list of stories
+    // Load stories
     async function loadStories() {
       try {
         setStatus('Loading stories…');
-        const r = await fetch('/api/storyboard/list', { cache: 'no-store' }); // <-- important path
+        const r = await fetch('/api/storyboard/list', { cache: 'no-store' });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-        renderStories(Array.isArray(j.stories) ? j.stories : []);
-        setStatus(j.stories && j.stories.length ? 'Loaded.' : 'No stories yet — share from the game page.');
+        const list = Array.isArray(j.stories) ? j.stories : [];
+        renderStories(list);
+        setStatus(list.length ? 'Loaded.' : 'No stories yet — share from the game page.');
       } catch (e) {
         console.error('List error:', e);
         setStatus('Error: ' + e.message);
@@ -133,6 +119,7 @@ await fetch('/api/storyboard/react', {
             <span id="counts-${s.id}">👍 ${s.likes || 0} · 👎 ${s.dislikes || 0}</span>
             <button data-like="${s.id}">Like</button>
             <button data-dislike="${s.id}">Dislike</button>
+            <button data-clear="${s.id}">Clear</button>
             <button data-toggle-comments="${s.id}">Comments</button>
           </div>
           <div id="comments-${s.id}" class="comments" style="display:none;"></div>
@@ -151,10 +138,10 @@ await fetch('/api/storyboard/react', {
             await fetch('/api/storyboard/react', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ story_id: id, value: 1 })
+              body: JSON.stringify({ story_id: id, value: 1, client_id: clientId })
             });
           } catch (e) { console.warn('Like failed:', e); }
-          setTimeout(loadStories, 1500);
+          setTimeout(loadStories, 800);
         };
       });
       storiesEl.querySelectorAll('button[data-dislike]').forEach(btn => {
@@ -165,10 +152,23 @@ await fetch('/api/storyboard/react', {
             await fetch('/api/storyboard/react', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ story_id: id, value: -1 })
+              body: JSON.stringify({ story_id: id, value: -1, client_id: clientId })
             });
           } catch (e) { console.warn('Dislike failed:', e); }
-          setTimeout(loadStories, 1500);
+          setTimeout(loadStories, 800);
+        };
+      });
+      storiesEl.querySelectorAll('button[data-clear]').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.getAttribute('data-clear');
+          try {
+            await fetch('/api/storyboard/react', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ story_id: id, value: 0, client_id: clientId })
+            });
+          } catch (e) { console.warn('Clear failed:', e); }
+          setTimeout(loadStories, 800);
         };
       });
       storiesEl.querySelectorAll('button[data-toggle-comments]').forEach(btn => {
